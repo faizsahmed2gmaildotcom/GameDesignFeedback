@@ -1,4 +1,4 @@
-import os, json, datetime, markdown
+import os, json, datetime, markdown, time
 import pathlib
 from google import genai
 from google.genai import types
@@ -33,18 +33,18 @@ tempFile.close()
 # selects/overwrites/creates entries in a dictionary through user input
 def entryProcess(entries: dict):
     print('')
-    selectedEntry = ""
-    while selectedEntry not in entries.keys():
+    selectedEntryName = ""
+    while selectedEntryName not in entries.keys():
         for entry in entries:
             print(f"{entry}: {entries[entry]}")
-        selectedEntry = input("Select an entry above or make a new entry: ")
-        if (selectedEntry.split(' ')[0].lower() == "remove") and (selectedEntry[7:] in entries.keys()):
+        selectedEntryName = input("Select an entry above or make a new entry: ")
+        if (selectedEntryName.split(' ')[0].lower() == "remove") and (selectedEntryName[7:] in entries.keys()):
             print('')
-            entries.pop(selectedEntry[7:])
-        elif selectedEntry == '':
+            entries.pop(selectedEntryName[7:])
+        elif selectedEntryName == '':
             print('')
             continue
-        elif selectedEntry not in entries.keys():
+        elif selectedEntryName not in entries.keys():
             userInput = ''
             while (userInput != 'y') and (userInput != 'n'):
                 userInput = input("Create new entry? 'y' / 'n': ").lower()
@@ -57,15 +57,14 @@ def entryProcess(entries: dict):
                             ffaDesc = input(f'Enter a brief description for the file "{ffa.name}": ')
                         filesDesc += f'"{ffa.name}": {ffaDesc}, '
                     filesDesc = filesDesc[:-2]
-                    entries.update({selectedEntry: filesDesc})
+                    entries.update({selectedEntryName: filesDesc})
                 else:
-                    entries.update({selectedEntry: input(f'Enter contents of "{selectedEntry}": ')})
+                    entries.update({selectedEntryName: input(f'Enter contents of "{selectedEntryName}": ')})
                     print('')
-            selectedEntry = ""
+            selectedEntryName = ""
             print('')
     print('')
-    selectedEntry = entries[selectedEntry]
-    return selectedEntry, entries
+    return selectedEntryName, entries
 
 
 # make default folders
@@ -84,19 +83,22 @@ mimetypes = {"pdf": "application/pdf", "txt": "text/plain", "html": "text/html",
 
 # query Gemini
 selectedData = {}
+selectedEntryNames = []
 for k in savedData:
     selectedData.update({k: ""})
+    selectedEntryNames.append("")
 userSelection = -1
 while (userSelection != 0) or any(e == "" for e in selectedData.values()):
     print('')
     for i, k in enumerate(savedData.keys()):
-        print(f"{i + 1}: {k} -- {"CHOSEN" if selectedData[k] else "NOT CHOSEN"}")
+        print(f"{i + 1}: {k} -- {selectedEntryNames[i] if selectedData[k] else "*NOT CHOSEN*"}")
     try:
         userSelection = int(input('Select an entry above or enter "0" to query the AI: '))
     except ValueError:
         continue
     if (userSelection > 0) and (userSelection <= len(savedData)):
-        selectedData[list(savedData.keys())[userSelection - 1]], savedData[list(savedData.keys())[userSelection - 1]] = entryProcess(savedData[list(savedData.keys())[userSelection - 1]])
+        selectedEntryNames[userSelection - 1], savedData[list(savedData.keys())[userSelection - 1]] = entryProcess(savedData[list(savedData.keys())[userSelection - 1]])
+        selectedData[list(savedData.keys())[userSelection - 1]] = savedData[list(savedData.keys())[userSelection - 1]][selectedEntryNames[userSelection - 1]]
 tempFile = open("savedData.json", 'w')
 json.dump(savedData, tempFile, indent=2)
 tempFile.close()
@@ -111,6 +113,7 @@ responses["gemini"] = gemini.models.generate_content(
     contents=contents,
     config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(include_thoughts=True))  # include thinking in response
 )
+# do something here while waiting for response (ask copilot and look up how to run more lines of code while querying Gemini)
 
 # format and output each AI response for human reading
 currentTime = str(datetime.datetime.now()).replace(':', '-').replace(' ', '_')[:-7]
@@ -129,4 +132,4 @@ for modelName in responses.keys():
                 outFile.write(markdown.markdown(part.text))
                 outFile.close()
 
-print(f"Complete! Check 'responses/response#{currentTime}'.")
+print(f"\nComplete! Check 'responses/response#{currentTime}'.")
