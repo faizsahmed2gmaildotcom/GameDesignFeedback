@@ -8,36 +8,72 @@ APIkeys = {
 }
 
 # make default files
-if not os.path.exists("config.json"):
-    tempFile = open("config.json", 'w')
-    json.dump({"specific": {"filesDescription": "", "gameDescription": ""}, "general": {"prompt": "", "extraContext": ""}}, tempFile, indent=2)
+if not os.path.exists("savedData.json"):
+    tempFile = open("savedData.json", 'w')
+    json.dump({
+        "Prompts": {
+            "Default": "These are documents containing level data (filesDescription). gameDescription Among the levels without survivorship bias, which levels do players like and dislike? Among the levels with survivorship bias, which levels do players like and dislike? Make your own algorithm to decide when survivorship bias occurs based on when the spread of player drop-off rates stabilizes. Compared to other levels, why are these levels liked or disliked? Based on the correlations between various data points, are there any insights on player behavior based on the contents of each level and features introduced in the progression map? After this, provide a concise response about actionable insights to the gameâ€™s developers. Separate sections for players with/without survivorship bias with subsections for what the game developers should add/remove/improve/rework. Throughout your response, make connections to the features of similar games through research."
+        },
+        "Files Descriptions": {
+            "Default": '''"RAW Game Data Sheets - Level Data.csv": contents of each level, "RAW Game Data Sheets - Progression Map.csv": progression map across levels, "RAW Game Data Sheets - Raw Analysis Data.csv": raw player data for each level'''
+        },
+        "Game Descriptions": {
+            "Word Nut": "This is for a casual mobile game in which players must sort jumbled characters to form words in a crossword puzzle."
+        }
+    }, tempFile, indent=2)
     tempFile.close()
+    print('Created file "savedData.json"\n')
 
-# load data from 'config.json'
-tempFile = open("config.json", 'r')
-config = json.load(tempFile)
+# load from 'savedData.json' for modification/extraction of entries
+tempFile = open("savedData.json", 'r')
+savedData = json.load(tempFile)
 tempFile.close()
-# check that nothing under 'specific' in 'config.json' is empty
-for cbe in config["specific"]:
-    while config["specific"][cbe] == "":
-        if cbe == "filesDescription":
-            for fileForAnalysis in os.scandir("filesForAnalysis"):
-                fileDesc = ""
-                while fileDesc == "":
-                    fileDesc = input(f'MISSING: Enter brief description for "{fileForAnalysis.name}": ')
-                config["specific"][cbe] += f"'{fileForAnalysis.name}': {fileDesc}, "
-            config["specific"][cbe] = config["specific"][cbe][:-2]
-        else:
-            config["specific"][cbe] = input(f"MISSING: '{cbe}' in config.json. Check the ReadMe and its value here: ")
-tempFile = open("config.json", 'w')
-json.dump(config, tempFile, indent=2)
-tempFile.close()
+
+
+# selects/overwrites/creates entries in a dictionary through user input
+def entryProcess(entries: dict):
+    print('')
+    selectedEntry = ""
+    while selectedEntry not in entries.keys():
+        for entry in entries:
+            print(f"{entry}: {entries[entry]}")
+        selectedEntry = input("Select an entry above or make a new entry: ")
+        if (selectedEntry.split(' ')[0].lower() == "remove") and (selectedEntry[7:] in entries.keys()):
+            print('')
+            entries.pop(selectedEntry[7:])
+        elif selectedEntry == '':
+            print('')
+            continue
+        elif selectedEntry not in entries.keys():
+            userInput = ''
+            while (userInput != 'y') and (userInput != 'n'):
+                userInput = input("Create new entry? 'y' / 'n': ").lower()
+            if userInput == 'y':
+                if list(savedData.keys())[userSelection - 1] == "Files Descriptions":
+                    filesDesc = ""
+                    for ffa in os.scandir("filesForAnalysis"):
+                        ffaDesc = ""
+                        while ffaDesc == "":
+                            ffaDesc = input(f'Enter a brief description for the file "{ffa.name}": ')
+                        filesDesc += f'"{ffa.name}": {ffaDesc}, '
+                    filesDesc = filesDesc[:-2]
+                    entries.update({selectedEntry: filesDesc})
+                else:
+                    entries.update({selectedEntry: input(f'Enter contents of "{selectedEntry}": ')})
+                    print('')
+            selectedEntry = ""
+            print('')
+    print('')
+    selectedEntry = entries[selectedEntry]
+    return selectedEntry, entries
+
 
 # make default folders
 createDirs = ["filesForAnalysis", "responses"]
 for d in createDirs:
     if not os.path.exists(d):
         os.mkdir(d)
+        print(f'Created directory "{d}"')
 
 responses = {}
 for modelName in APIkeys:
@@ -47,13 +83,29 @@ for modelName in APIkeys:
 mimetypes = {"pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "csv": "text/csv", "xml": "text/xml"}
 
 # query Gemini
+selectedData = {}
+for k in savedData:
+    selectedData.update({k: ""})
+userSelection = -1
+while (userSelection != 0) or any(e == "" for e in selectedData.values()):
+    print('')
+    for i, k in enumerate(savedData.keys()):
+        print(f"{i + 1}: {k} -- {"CHOSEN" if selectedData[k] else "NOT CHOSEN"}")
+    try:
+        userSelection = int(input('Select an entry above or enter "0" to query the AI: '))
+    except ValueError:
+        continue
+    if (userSelection > 0) and (userSelection <= len(savedData)):
+        selectedData[list(savedData.keys())[userSelection - 1]], savedData[list(savedData.keys())[userSelection - 1]] = entryProcess(savedData[list(savedData.keys())[userSelection - 1]])
+tempFile = open("savedData.json", 'w')
+json.dump(savedData, tempFile, indent=2)
+tempFile.close()
+
+prompt = selectedData["Prompts"].replace("filesDescription", selectedData["Files Descriptions"]).replace("gameDescription", selectedData["Game Descriptions"])
+
 gemini = genai.Client(api_key=APIkeys["gemini"])
 contents = [types.Part.from_bytes(data=pathlib.Path(doc.path).read_bytes(), mime_type=mimetypes[doc.path.split('.')[-1]]) for doc in os.scandir("filesForAnalysis")]  # prepare files in filesForAnalysis
-prompt = config["general"]["prompt"]
-for s in config["specific"]:
-    prompt = prompt.replace(s, config["specific"][s])
-contents.append(prompt + config["general"]["extraContext"])
-# print(contents)
+contents.append(prompt)
 responses["gemini"] = gemini.models.generate_content(
     model="gemini-2.5-flash",
     contents=contents,
@@ -77,4 +129,4 @@ for modelName in responses.keys():
                 outFile.write(markdown.markdown(part.text))
                 outFile.close()
 
-print("Complete! Check the 'responses' directory.")
+print(f"Complete! Check 'responses/response#{currentTime}'.")
