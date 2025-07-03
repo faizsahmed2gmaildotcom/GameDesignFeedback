@@ -33,7 +33,16 @@ tempFile.close()
 def userInputYN(userPrompt):
     userInput = ''
     while (userInput != 'y') and (userInput != 'n'):
-        userInput = input(f"{userPrompt} 'y' / 'n': ").lower()
+        userInput = customInput(f"{userPrompt} 'y' / 'n': ").lower()
+    return userInput
+
+def customInput(userPrompt):
+    userInput = input(userPrompt)
+    if (userInput.lower() == "exit") or (userInput.lower() == "quit"):
+        saveDataFile = open("savedData.json", 'w')
+        json.dump(savedData, saveDataFile, indent=2)
+        saveDataFile.close()
+        exit(print('\n\n\nProgress saved in "savedData.json"'))
     return userInput
 
 
@@ -60,14 +69,14 @@ def entryProcess(entries: dict):
                 print(f"{entry}: {entries[entry]}")
             else:
                 print(f"{entry}: INVALID ({invalidEntries[entry]})")
-        selectedEntryName = input("Select an entry above or make a new entry: ")
+        selectedEntryName = customInput("Select an entry above or make a new entry: ")
         if (selectedEntryName[:6].lower() == "remove") and (selectedEntryName[7:] in entries.keys()):
             userInput = userInputYN(f'Remove entry {selectedEntryName[7:]}?')
             if userInput == 'y':
                 entries.pop(selectedEntryName[7:])
             print('')
         elif selectedEntryName in invalidEntries:
-            input(f"{invalidEntries[selectedEntryName]} (press ENTER to continue)")
+            customInput(f"{invalidEntries[selectedEntryName]} (press ENTER to continue)")
             selectedEntryName = ''
             print('')
             continue
@@ -80,14 +89,14 @@ def entryProcess(entries: dict):
                         for ffa in os.listdir("filesForAnalysis"):
                             ffaDesc = ""
                             while ffaDesc == "":
-                                ffaDesc = input(f'Enter a brief description for the file "{ffa}": ')
+                                ffaDesc = customInput(f'Enter a brief description for the file "{ffa}": ')
                             filesDesc += f'"{ffa}": {ffaDesc} || '
                         filesDesc = filesDesc[:-4]
                         entries.update({selectedEntryName: filesDesc})
                     else:
                         raise FileNotFoundError("filesForAnalysis cannot be empty!")
                 else:
-                    entries.update({selectedEntryName: input(f'Enter contents of "{selectedEntryName}": ')})
+                    entries.update({selectedEntryName: customInput(f'Enter contents of "{selectedEntryName}": ')})
                     print('')
             selectedEntryName = ""
             print('')
@@ -95,44 +104,14 @@ def entryProcess(entries: dict):
     return selectedEntryName, entries
 
 
-# make default folders
-createDirs = ["filesForAnalysis", "responses"]
-for d in createDirs:
-    if not os.path.exists(d):
-        os.mkdir(d)
-        print(f'Created directory "{d}"')
-
-responses = {}
-for modelName in APIkeys:
-    responses.update({modelName: ""})
-
-# possible MIME types for Gemini
-mimetypes = {"pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "csv": "text/csv", "xml": "text/xml"}
-
-# query Gemini
-selectedData = {}
-selectedEntryNames = []
-for k in savedData:
-    selectedData.update({k: ""})
-    selectedEntryNames.append("")
-userIdx = -1
-while (userIdx != 0) or any(e == "" for e in selectedData.values()):
+def stopwatch():
     print('')
-    for i, k in enumerate(savedData.keys()):
-        print(f"{i + 1}: {k} -- {selectedEntryNames[i] if selectedData[k] else "*NOT CHOSEN*"}")
-    try:
-        userIdx = int(input('Select an entry above or enter "0" to query the AI: '))
-    except ValueError:
-        continue
-    if (userIdx > 0) and (userIdx <= len(savedData)):
-        userEntry = list(savedData.keys())[userIdx - 1]
-        selectedEntryNames[userIdx - 1], savedData[userEntry] = entryProcess(savedData[userEntry])
-        selectedData[userEntry] = savedData[userEntry][selectedEntryNames[userIdx - 1]]
-tempFile = open("savedData.json", 'w')
-json.dump(savedData, tempFile, indent=2)
-tempFile.close()
-
-prompt = selectedData["Prompts"].replace("filesDescription", selectedData["Files Descriptions"]).replace("gameDescription", selectedData["Game Descriptions"])
+    timeElapsed: float = 0
+    while any(r == "" for r in responses.values()):
+        sys.stdout.write(f"\rQuerying... {timeElapsed:.2f}s")
+        sys.stdout.flush()
+        time.sleep(0.25)
+        timeElapsed += 0.25
 
 
 def queryGemini():
@@ -146,37 +125,68 @@ def queryGemini():
     )
 
 
-def stopwatch():
-    print('')
-    timeElapsed: float = 0
-    while any(r == "" for r in responses.values()):
-        sys.stdout.write(f"\rQuerying... {timeElapsed:.2f}s")
-        sys.stdout.flush()
-        time.sleep(0.25)
-        timeElapsed += 0.25
+# make default folders
+createDirs = ["filesForAnalysis", "responses"]
+for d in createDirs:
+    if not os.path.exists(d):
+        os.mkdir(d)
+        print(f'Created directory "{d}"')
 
+# possible MIME types for Gemini
+mimetypes = {"pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "csv": "text/csv", "xml": "text/xml"}
 
-geminiQuerier = threading.Thread(target=queryGemini)
-stopwatchThread = threading.Thread(target=stopwatch)
-stopwatchThread.start()
-geminiQuerier.start()
-geminiQuerier.join()
+responses = {}
+for modelName in APIkeys:
+    responses.update({modelName: ""})
 
-# parse and output each AI response for human reading
-currentTime = str(datetime.datetime.now()).replace(':', '-').replace(' ', '_')[:-7]
-for modelName in responses:
-    os.mkdir(f"responses/response#{currentTime}")
-    if modelName == "gemini":
-        for part in responses[modelName].candidates[0].content.parts:
-            if not part.text:
-                continue
-            if part.thought:
-                outFile = open(f"responses/response#{currentTime}/{modelName}-thinking.html", 'w', encoding="utf-8", errors="xmlcharrefreplace")
-                outFile.write(markdown.markdown(part.text))
-                outFile.close()
-            else:
-                outFile = open(f"responses/response#{currentTime}/{modelName}-response.html", 'w', encoding="utf-8", errors="xmlcharrefreplace")
-                outFile.write(markdown.markdown(part.text))
-                outFile.close()
+while True:
+    # query Gemini
+    selectedData = {}
+    selectedEntryNames = []
+    for k in savedData:
+        selectedData.update({k: ""})
+        selectedEntryNames.append("")
+    userIdx = -1
+    while (userIdx != 0) or any(e == "" for e in selectedData.values()):
+        print('')
+        for i, k in enumerate(savedData.keys()):
+            print(f"{i + 1}: {k} -- {selectedEntryNames[i] if selectedData[k] else "*NOT CHOSEN*"}")
+        try:
+            userIdx = int(customInput('Select an entry above or enter "0" to query the AI: '))
+        except ValueError:
+            continue
+        if (userIdx > 0) and (userIdx <= len(savedData)):
+            userEntry = list(savedData.keys())[userIdx - 1]
+            selectedEntryNames[userIdx - 1], savedData[userEntry] = entryProcess(savedData[userEntry])
+            selectedData[userEntry] = savedData[userEntry][selectedEntryNames[userIdx - 1]]
+    tempFile = open("savedData.json", 'w')
+    json.dump(savedData, tempFile, indent=2)
+    tempFile.close()
+    print('\nProgress autosaved in "savedData.json"')
 
-print(f'\nComplete! Check "responses/response#{currentTime}".')
+    prompt = selectedData["Prompts"].replace("filesDescription", selectedData["Files Descriptions"]).replace("gameDescription", selectedData["Game Descriptions"])
+
+    geminiQuerier = threading.Thread(target=queryGemini)
+    stopwatchThread = threading.Thread(target=stopwatch)
+    stopwatchThread.start()
+    geminiQuerier.start()
+    geminiQuerier.join()
+
+    # parse and output each AI response for human reading
+    currentTime = str(datetime.datetime.now()).replace(':', '-').replace(' ', '_')[:-7]
+    for modelName in responses:
+        os.mkdir(f"responses/response#{currentTime}")
+        if modelName == "gemini":
+            for part in responses[modelName].candidates[0].content.parts:
+                if not part.text:
+                    continue
+                if part.thought:
+                    outFile = open(f"responses/response#{currentTime}/{modelName}-thinking.html", 'w', encoding="utf-8", errors="xmlcharrefreplace")
+                    outFile.write(markdown.markdown(part.text))
+                    outFile.close()
+                else:
+                    outFile = open(f"responses/response#{currentTime}/{modelName}-response.html", 'w', encoding="utf-8", errors="xmlcharrefreplace")
+                    outFile.write(markdown.markdown(part.text))
+                    outFile.close()
+
+    print(f'\nComplete! Check "responses/response#{currentTime}".\n\n\n')
