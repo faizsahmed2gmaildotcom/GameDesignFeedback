@@ -1,5 +1,6 @@
-import os, json, datetime, markdown, time
+import os, json, datetime, markdown, time, threading, sys
 import pathlib
+
 from google import genai
 from google.genai import types
 
@@ -105,19 +106,34 @@ tempFile.close()
 
 prompt = selectedData["Prompts"].replace("filesDescription", selectedData["Files Descriptions"]).replace("gameDescription", selectedData["Game Descriptions"])
 
-gemini = genai.Client(api_key=APIkeys["gemini"])
-contents = [types.Part.from_bytes(data=pathlib.Path(doc.path).read_bytes(), mime_type=mimetypes[doc.path.split('.')[-1]]) for doc in os.scandir("filesForAnalysis")]  # prepare files in filesForAnalysis
-contents.append(prompt)
-responses["gemini"] = gemini.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=contents,
-    config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(include_thoughts=True))  # include thinking in response
-)
-# do something here while waiting for response (ask copilot and look up how to run more lines of code while querying Gemini)
+def queryGemini():
+    gemini = genai.Client(api_key=APIkeys["gemini"])
+    contents = [types.Part.from_bytes(data=pathlib.Path(doc.path).read_bytes(), mime_type=mimetypes[doc.path.split('.')[-1]]) for doc in os.scandir("filesForAnalysis")]  # prepare files in filesForAnalysis
+    contents.append(prompt)
+    responses["gemini"] = gemini.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=contents,
+        config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(include_thoughts=True))  # include thinking in response
+    )
 
-# format and output each AI response for human reading
+def stopwatch():
+    print('')
+    timeElapsed: float = 0
+    while any(r == "" for r in responses.values()):
+        sys.stdout.write(f"\rQuerying... {timeElapsed:.2f}s")
+        sys.stdout.flush()
+        time.sleep(0.25)
+        timeElapsed += 0.25
+
+geminiQuerier = threading.Thread(target=queryGemini)
+stopwatchThread = threading.Thread(target=stopwatch)
+stopwatchThread.start()
+geminiQuerier.start()
+geminiQuerier.join()
+
+# parse and output each AI response for human reading
 currentTime = str(datetime.datetime.now()).replace(':', '-').replace(' ', '_')[:-7]
-for modelName in responses.keys():
+for modelName in responses:
     os.mkdir(f"responses/response#{currentTime}")
     if modelName == "gemini":
         for part in responses[modelName].candidates[0].content.parts:
@@ -132,4 +148,4 @@ for modelName in responses.keys():
                 outFile.write(markdown.markdown(part.text))
                 outFile.close()
 
-print(f"\nComplete! Check 'responses/response#{currentTime}'.")
+print(f'\nComplete! Check "responses/response#{currentTime}".')

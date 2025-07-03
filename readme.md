@@ -1,4 +1,5 @@
 # INSTRUCTIONS
+## YOU MUST INSTALL THE "google-genai" PACKAGE FIRST
 
 ### 1. Run "gameAnalysis.py"
 ### 2. Place contextual files in "filesForAnalysis"
