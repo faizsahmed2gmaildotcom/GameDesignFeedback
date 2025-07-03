@@ -36,6 +36,7 @@ def userInputYN(userPrompt):
         userInput = customInput(f"{userPrompt} 'y' / 'n': ").lower()
     return userInput
 
+
 def customInput(userPrompt):
     userInput = input(userPrompt)
     if (userInput.lower() == "exit") or (userInput.lower() == "quit"):
@@ -135,11 +136,10 @@ for d in createDirs:
 # possible MIME types for Gemini
 mimetypes = {"pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "csv": "text/csv", "xml": "text/xml"}
 
-responses = {}
-for modelName in APIkeys:
-    responses.update({modelName: ""})
-
 while True:
+    responses = {}
+    for modelName in APIkeys:
+        responses.update({modelName: ""})
     # query Gemini
     selectedData = {}
     selectedEntryNames = []
