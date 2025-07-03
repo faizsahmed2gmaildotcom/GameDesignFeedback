@@ -59,7 +59,7 @@ def entryProcess(entries: dict):
                 f = f.split(": ")[0][1:-1]
                 if f not in os.listdir("filesForAnalysis"):
                     missingFileDesc += f'"{f}", '
-                missingFileDesc = missingFileDesc[:-1]
+            missingFileDesc = missingFileDesc[:-2]
             if missingFileDesc != "":
                 invalidEntries.update({fd: f"Missing file(s): {missingFileDesc}"})
 
