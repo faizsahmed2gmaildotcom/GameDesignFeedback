@@ -30,7 +30,14 @@ savedData: dict = json.load(tempFile)
 tempFile.close()
 
 
-# selects/overwrites/creates entries in a dictionary through user input
+def userInputYN(userPrompt):
+    userInput = ''
+    while (userInput != 'y') and (userInput != 'n'):
+        userInput = input(f"{userPrompt} 'y' / 'n': ").lower()
+    return userInput
+
+
+# selects/overwrites/creates entries in a dictionary through user input. also displays but prevents the selection of invalid entries and their reasons.
 def entryProcess(entries: dict):
     print('')
     selectedEntryName = ""
@@ -54,18 +61,18 @@ def entryProcess(entries: dict):
             else:
                 print(f"{entry}: INVALID ({invalidEntries[entry]})")
         selectedEntryName = input("Select an entry above or make a new entry: ")
-        if (selectedEntryName.split(' ')[0].lower() == "remove") and (selectedEntryName[7:] in entries.keys()):
+        if (selectedEntryName[:6].lower() == "remove") and (selectedEntryName[7:] in entries.keys()):
+            userInput = userInputYN(f'Remove entry {selectedEntryName[7:]}?')
+            if userInput == 'y':
+                entries.pop(selectedEntryName[7:])
             print('')
-            entries.pop(selectedEntryName[7:])
         elif selectedEntryName in invalidEntries:
-            print(invalidEntries[selectedEntryName])
+            input(f"{invalidEntries[selectedEntryName]} (press ENTER to continue)")
             selectedEntryName = ''
             print('')
             continue
         elif selectedEntryName not in entries:
-            userInput = ''
-            while (userInput != 'y') and (userInput != 'n'):
-                userInput = input("Create new entry? 'y' / 'n': ").lower()
+            userInput = userInputYN("Create new entry?")
             if userInput == 'y':
                 if userEntry == "Files Descriptions":
                     filesDesc = ""
