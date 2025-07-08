@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Game Analysis Web UI</title>
+    <style>
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        button {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+<!-- Section 1 -->
+<div class="section" id="section1">
+    <p>Prompt</p>
+    <select id="dropdown1"></select>
+    <button type="button" onclick="deleteEntry(0)">Remove Entry</button>
+    <span id="status1" style="color: indianred; margin-left: 10px; display: none;"></span>
+    <br>
+    <input type="text" id="selected1" style="width: 300px; margin: 5px 0;">
+    <textarea id="textbox1"></textarea>
+</div>
+<!-- Section 2 -->
+<div class="section" id="section2">
+    <p>File Description(s)</p>
+    <select id="dropdown2"></select>
+    <button type="button" onclick="deleteEntry(1)">Remove Entry</button>
+    <span id="status2" style="color: indianred; margin-left: 10px; display: none;"></span>
+    <br>
+    <input type="text" id="selected2" style="width: 300px; margin: 5px 0;">
+    <textarea id="textbox2"></textarea>
+</div>
+<!-- Section 3 -->
+<div class="section" id="section3">
+    <p>Game Description</p>
+    <select id="dropdown3"></select>
+    <button type="button" onclick="deleteEntry(2)">Remove Entry</button>
+    <span id="status3" style="color: indianred; margin-left: 10px; display: none;">Test</span>
+    <br>
+    <input type="text" id="selected3" style="width: 300px; margin: 5px 0;">
+    <textarea id="textbox3"></textarea>
+</div>
+<button type="button" id="saveAll" onclick="saveAll(true)">Save Progress</button>
+<button type="button" id="queryAI" disabled onclick="queryAI()">Query AI</button>
+<br>
+<div id="loadingBar" style="display:none; width:100%; margin:20px 0;">
+    <div style="background:#eee; width:100%; height:20px; border-radius:5px; overflow:hidden;">
+        <div id="loadingProgress" style="background:#4caf50; width:0%; height:100%; transition:width 60s;"></div>
+    </div>
+    <span id="loadingText" style="margin-left:10px;">Querying AI...</span>
+</div>
+<div id="responseContainer" style="margin-top:30px;">
+    <!-- Embedded response will appear here -->
+</div>
+
+<script>
+    let dropdowns = [
+        {id: 'dropdown1', section: 'Prompts', textbox: 'textbox1', selected: 'selected1'},
+        {id: 'dropdown2', section: 'Files Descriptions', textbox: 'textbox2', selected: 'selected2'},
+        {id: 'dropdown3', section: 'Game Descriptions', textbox: 'textbox3', selected: 'selected3'}
+    ];
+
+    fetch('/get_dropdowns').then(r => r.json()).then(data => {
+        dropdowns[0].options = data.prompts;
+        dropdowns[1].options = data.files;
+        dropdowns[2].options = data.games;
+        dropdowns.forEach((d, i) => {
+            let sel = document.getElementById(d.id);
+            // Add blank option first
+            let blank = document.createElement('option');
+            blank.value = '';
+            blank.text = '';
+            sel.add(blank);
+            d.options.forEach(opt => {
+                let o = document.createElement('option');
+                o.value = opt;
+                o.text = opt;
+                sel.add(o);
+            });
+            sel.onchange = () => loadText(i);
+            sel.selectedIndex = 0;
+            loadText(i);
+        });
+    });
+
+    function refreshDropdowns() {
+        fetch('/get_dropdowns').then(r => r.json()).then(data => {
+            dropdowns[0].options = data.prompts;
+            dropdowns[1].options = data.files;
+            dropdowns[2].options = data.games;
+            dropdowns.forEach((d, i) => {
+                let sel = document.getElementById(d.id);
+                // Get value from the small textbox
+                let desiredValue = document.getElementById(d.selected).value;
+                sel.innerHTML = ""; // Clear old options
+                // Add blank option first
+                let blank = document.createElement('option');
+                blank.value = '';
+                blank.text = '';
+                sel.add(blank);
+                d.options.forEach(opt => {
+                    let o = document.createElement('option');
+                    o.value = opt;
+                    o.text = opt;
+                    sel.add(o);
+                });
+                // Set dropdown to match the textbox value
+                sel.value = desiredValue;
+                // If not found, fallback to blank
+                if (sel.value !== desiredValue) sel.selectedIndex = 0;
+                loadText(i);
+            });
+        });
+    }
+
+    function updateStatus(idx, message) {
+        let status = document.getElementById('status' + (idx + 1));
+        if (message) {
+            status.textContent = message;
+            status.style.display = 'inline';
+        } else {
+            status.textContent = '';
+            status.style.display = 'none';
+        }
+    }
+
+    function deleteEntry(idx) {
+        let d = dropdowns[idx];
+        let key = document.getElementById(d.selected).value;
+        if (!key) return alert("No entry selected to delete.");
+        if (!confirm(`Delete "${key}" from${d.section}?`)) return;
+        fetch('/delete_entry', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({section: d.section, key: key})
+        }).then(r => r.json()).then(data => {
+            alert(data.result);
+        });
+        refreshDropdowns();
+    }
+
+    function selectDropdownItems(selections) {
+        dropdowns.forEach((d, i) => {
+            let sel = document.getElementById(d.id);
+            sel.value = selections[i] || ''; // selections is an array of keys to select
+            // Optionally, update the small textbox and textarea
+            document.getElementById(d.selected).value = sel.value;
+            loadText(i);
+        });
+    }
+
+    function loadText(idx) {
+        let d = dropdowns[idx];
+        let sel = document.getElementById(d.id);
+        let key = sel.value;
+        document.getElementById(d.selected).value = key; // Update small textbox
+        fetch('/get_text', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({section: d.section, key: key})
+        }).then(r => r.json()).then(data => {
+            document.getElementById(d.textbox).value = data.text;
+        });
+        // Fetch status
+        fetch('/get_status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({section: d.section, key: key})
+        }).then(r => r.json()).then(data => {
+            updateStatus(idx, data.status);
+        });
+    }
+
+    function saveAll(refreshDrop) {
+        let allData = dropdowns.map((d, idx) => ({
+            section: d.section,
+            key: document.getElementById(d.selected).value,
+            text: document.getElementById(d.textbox).value
+        }));
+        fetch('/save_all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({entries: allData})
+        })
+        if (refreshDrop === true) refreshDropdowns();
+    }
+
+    function checkCanQuery() {
+        fetch('/can_query').then(r => r.json()).then(data => {
+            document.getElementById('queryAI').disabled = !data.can_query;
+        });
+    }
+
+    setInterval(checkCanQuery, 1000);
+
+    function queryAI() {
+        saveAll(false);
+        // Show loading bar
+        document.getElementById('loadingBar').style.display = 'block';
+        document.getElementById('loadingProgress').style.width = '0%';
+        let progress = 0;
+        let interval = setInterval(() => {
+            progress = Math.min(progress + Math.random() * 10, 90);
+            document.getElementById('loadingProgress').style.width = progress + '%';
+        }, 300);
+
+        fetch('/query_ai', {method: 'POST'}).then(r => r.json()).then(data => {
+            document.getElementById('loadingProgress').style.width = '100%';
+            setTimeout(() => {
+                document.getElementById('loadingBar').style.display = 'none';
+                clearInterval(interval);
+                // Fetch the latest response folder name
+                fetch('/get_latest_response').then(r => r.json()).then(info => {
+                    let responsePath = `responses/${info.folder}/gemini-response.html`;
+                    document.getElementById('responseContainer').innerHTML =
+                        `<iframe src="${responsePath}" width="100%" height="100%" style="border:1px solid #ccc;"></iframe>`;
+                });
+            }, 500);
+            alert(data.result);
+        }).catch(() => {
+            document.getElementById('loadingBar').style.display = 'none';
+            clearInterval(interval);
+            alert("An error occurred while querying the AI.");
+        });
+    }
+</script>
+</body>
+</html>
